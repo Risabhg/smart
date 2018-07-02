@@ -7,7 +7,6 @@ const uuid = require('uuid');
 const request = require('request');
 const JSONbig = require('json-bigint');
 const async = require('async');
-
 const REST_PORT = (process.env.PORT || 5000);
 const APIAI_ACCESS_TOKEN = process.env.APIAI_ACCESS_TOKEN || '00704a66ada1412282133169126e065f';
 const APIAI_LANG = process.env.APIAI_LANG || 'en';
@@ -20,13 +19,17 @@ const FACEBOOK_WELCOME = "FACEBOOK_WELCOME";
 
 class FacebookBot {
     constructor() {
-        this.apiAiService = apiai(APIAI_ACCESS_TOKEN, {language: APIAI_LANG, requestSource: "fb"});
+        this.apiAiService = apiai(APIAI_ACCESS_TOKEN, {
+            language: APIAI_LANG,
+            requestSource: "fb"
+        });
         this.sessionIds = new Map();
         this.messagesDelay = 200;
     }
 
 
     doDataResponse(sender, facebookResponseData) {
+        console.log("================doDatasResponse==================");
         if (!Array.isArray(facebookResponseData)) {
             console.log('Response as formatted message');
             this.sendFBMessage(sender, facebookResponseData)
@@ -38,8 +41,7 @@ class FacebookBot {
                     this.sendFBSenderAction(sender, facebookMessage.sender_action)
                         .then(() => callback())
                         .catch(err => callback(err));
-                }
-                else {
+                } else {
                     console.log('Response as formatted message');
                     this.sendFBMessage(sender, facebookMessage)
                         .then(() => callback())
@@ -56,6 +58,7 @@ class FacebookBot {
     }
 
     doRichContentResponse(sender, messages) {
+        console.log("================doRichContentResponse==================");
         let facebookMessages = []; // array with result messages
 
         for (let messageIndex = 0; messageIndex < messages.length; messageIndex++) {
@@ -67,124 +70,135 @@ class FacebookBot {
                     // speech: ["hi"]
                     // we have to get value from fulfillment.speech, because of here is raw speech
                     if (message.speech) {
-
+                        console.log(message.speech);
                         let splittedText = this.splitResponse(message.speech);
-                      
-
                         splittedText.forEach(s => {
-                            facebookMessages.push({text: s});
+                            facebookMessages.push({
+                                text: s
+                            });
                         });
                     }
 
                     break;
-                //message.type 1 means card message
-                case 1: {
-                    let carousel = [message];
+                    //message.type 1 means card message
+                case 1:
+                    {
+                        let carousel = [message];
 
-                    for (messageIndex++; messageIndex < messages.length; messageIndex++) {
-                        if (messages[messageIndex].type == 1) {
-                            carousel.push(messages[messageIndex]);
-                        } else {
-                            messageIndex--;
-                            break;
+                        for (messageIndex++; messageIndex < messages.length; messageIndex++) {
+                            if (messages[messageIndex].type == 1) {
+                                carousel.push(messages[messageIndex]);
+                            } else {
+                                messageIndex--;
+                                break;
+                            }
                         }
-                    }
 
-                    let facebookMessage = {};
-                    carousel.forEach((c) => {
-                        // buttons: [ {text: "hi", postback: "postback"} ], imageUrl: "", title: "", subtitle: ""
+                        let facebookMessage = {};
+                        carousel.forEach((c) => {
+                            // buttons: [ {text: "hi", postback: "postback"} ], imageUrl: "", title: "", subtitle: ""
 
-                        let card = {};
+                            let card = {};
 
-                        card.title = c.title;
-                        card.image_url = c.imageUrl;
-                        if (this.isDefined(c.subtitle)) {
-                            card.subtitle = c.subtitle;
-                        }
-                        //If button is involved in.
-                        if (c.buttons.length > 0) {
-                            let buttons = [];
-                            for (let buttonIndex = 0; buttonIndex < c.buttons.length; buttonIndex++) {
-                                let button = c.buttons[buttonIndex];
+                            card.title = c.title;
+                            card.image_url = c.imageUrl;
+                            if (this.isDefined(c.subtitle)) {
+                                card.subtitle = c.subtitle;
+                            }
+                            //If button is involved in.
+                            if (c.buttons.length > 0) {
+                                let buttons = [];
+                                for (let buttonIndex = 0; buttonIndex < c.buttons.length; buttonIndex++) {
+                                    let button = c.buttons[buttonIndex];
 
-                                if (button.text) {
-                                    let postback = button.postback;
-                                    if (!postback) {
-                                        postback = button.text;
+                                    if (button.text) {
+                                        let postback = button.postback;
+                                        if (!postback) {
+                                            postback = button.text;
+                                        }
+
+                                        let buttonDescription = {
+                                            title: button.text
+                                        };
+
+                                        if (postback.startsWith("http")) {
+                                            buttonDescription.type = "web_url";
+                                            buttonDescription.url = postback;
+                                        } else {
+                                            buttonDescription.type = "postback";
+                                            buttonDescription.payload = postback;
+                                        }
+
+                                        buttons.push(buttonDescription);
                                     }
+                                }
 
-                                    let buttonDescription = {
-                                        title: button.text
-                                    };
-
-                                    if (postback.startsWith("http")) {
-                                        buttonDescription.type = "web_url";
-                                        buttonDescription.url = postback;
-                                    } else {
-                                        buttonDescription.type = "postback";
-                                        buttonDescription.payload = postback;
-                                    }
-
-                                    buttons.push(buttonDescription);
+                                if (buttons.length > 0) {
+                                    card.buttons = buttons;
                                 }
                             }
 
-                            if (buttons.length > 0) {
-                                card.buttons = buttons;
+                            if (!facebookMessage.attachment) {
+                                facebookMessage.attachment = {
+                                    type: "template"
+                                };
                             }
-                        }
 
-                        if (!facebookMessage.attachment) {
-                            facebookMessage.attachment = {type: "template"};
-                        }
+                            if (!facebookMessage.attachment.payload) {
+                                facebookMessage.attachment.payload = {
+                                    template_type: "generic",
+                                    elements: []
+                                };
+                            }
 
-                        if (!facebookMessage.attachment.payload) {
-                            facebookMessage.attachment.payload = {template_type: "generic", elements: []};
-                        }
-
-                        facebookMessage.attachment.payload.elements.push(card);
-                    });
-
-                    facebookMessages.push(facebookMessage);
-                }
-
-                    break;
-                //message.type 2 means quick replies message
-                case 2: {
-                    if (message.replies && message.replies.length > 0) {
-                        let facebookMessage = {};
-
-                        facebookMessage.text = message.title ? message.title : 'Choose an item';
-                        facebookMessage.quick_replies = [];
-
-                        message.replies.forEach((r) => {
-                            facebookMessage.quick_replies.push({
-                                content_type: "text",
-                                title: r,
-                                payload: r
-                            });
+                            facebookMessage.attachment.payload.elements.push(card);
                         });
 
                         facebookMessages.push(facebookMessage);
                     }
-                }
 
                     break;
-                //message.type 3 means image message
+                    //message.type 2 means quick replies message
+                case 2:
+                    {
+                        if (message.replies && message.replies.length > 0) {
+                            let facebookMessage = {};
+
+                            facebookMessage.text = message.title ? message.title : 'Choose an item';
+                            facebookMessage.quick_replies = [];
+
+                            message.replies.forEach((r) => {
+                                facebookMessage.quick_replies.push({
+                                    content_type: "text",
+                                    title: r,
+                                    payload: r
+                                });
+                            });
+
+                            facebookMessages.push(facebookMessage);
+                        }
+                    }
+
+                    break;
+                    //message.type 3 means image message
                 case 3:
 
                     if (message.imageUrl) {
                         let facebookMessage = {};
 
                         // "imageUrl": "http://example.com/image.jpg"
-                        facebookMessage.attachment = {type: "image"};
-                        facebookMessage.attachment.payload = {url: message.imageUrl};
+                        facebookMessage.attachment = {
+                            type: "image"
+                        };
+                        facebookMessage.attachment.payload = {
+                            url: message.imageUrl
+                        };
 
                         facebookMessages.push(facebookMessage);
                     }
 
                     break;
-                //message.type 4 means custom payload message
+                    //message.type 4 means custom payload message
                 case 4:
                     if (message.payload && message.payload.facebook) {
                         facebookMessages.push(message.payload.facebook);
@@ -218,13 +232,17 @@ class FacebookBot {
     }
 
     doTextResponse(sender, responseText) {
-        console.log('Response as text message');
+        console.log("================doTextResponse==================");
+        console.log("Sender is: ", sender);
+        console.log('Response as text message', responseText);
         // facebook API limit for text length is 640,
         // so we must split message if needed
         let splittedText = this.splitResponse(responseText);
 
         async.eachSeries(splittedText, (textPart, callback) => {
-            this.sendFBMessage(sender, {text: textPart})
+            this.sendFBMessage(sender, {
+                    text: textPart
+                })
                 .then(() => callback())
                 .catch(err => callback(err));
         });
@@ -257,10 +275,15 @@ class FacebookBot {
 
             switch (payload) {
                 case FACEBOOK_WELCOME:
-                    return {name: FACEBOOK_WELCOME};
+                    return {
+                        name: FACEBOOK_WELCOME
+                    };
 
                 case FACEBOOK_LOCATION:
-                    return {name: FACEBOOK_LOCATION, data: event.postback.data}
+                    return {
+                        name: FACEBOOK_LOCATION,
+                        data: event.postback.data
+                    }
             }
         }
 
@@ -278,14 +301,13 @@ class FacebookBot {
                 this.sessionIds.set(sender, uuid.v4());
             }
 
-            let apiaiRequest = this.apiAiService.eventRequest(eventObject,
-                {
-                    sessionId: this.sessionIds.get(sender),
-                    originalRequest: {
-                        data: event,
-                        source: "facebook"
-                    }
-                });
+            let apiaiRequest = this.apiAiService.eventRequest(eventObject, {
+                sessionId: this.sessionIds.get(sender),
+                originalRequest: {
+                    data: event,
+                    source: "facebook"
+                }
+            });
             this.doApiAiRequest(apiaiRequest, sender);
         }
     }
@@ -303,39 +325,65 @@ class FacebookBot {
 
             console.log("Text", text);
             //send user's text to api.ai service
-            let apiaiRequest = this.apiAiService.textRequest(text,
-                {
-                    sessionId: this.sessionIds.get(sender),
-                    originalRequest: {
-                        data: event,
-                        source: "facebook"
-                    }
-                });
+            let apiaiRequest = this.apiAiService.textRequest(text, {
+                sessionId: this.sessionIds.get(sender),
+                originalRequest: {
+                    data: event,
+                    source: "facebook"
+                }
+            });
 
             this.doApiAiRequest(apiaiRequest, sender);
         }
     }
 
+    handleApiAiAction(sender, action, responseMessages, contexts, parameters) {
+        switch (action) {
+            case "personal-details-for-job-application":
+                let userContact = contexts[0].parameters['user-contact'];
+                if (userContact.length <=0)
+                    userContact = '';
+                console.log("User Contact is: ", userContact);
+                this.doRichContentResponse(sender, responseMessages);
+                break;
+            default:
+                //unhandled action, just send back the text
+                console.log("Entering handleApiAiAction...........");
+                //console.log("Action is: ", action);
+                console.log("=======RESPONSE TEXT======",responseMessages);
+                this.doRichContentResponse(sender, responseMessages);
+        }
+    }
+
     doApiAiRequest(apiaiRequest, sender) {
         apiaiRequest.on('response', (response) => {
+            let responseText = response.result.fulfillment.speech;
+            let responseData = response.result.fulfillment.data;
+            let responseMessages = response.result.fulfillment.messages;
+            console.log("ResponseText ", responseText);
+            console.log("ResponseData ", responseData);
+            console.log("ResponseMessages ", responseMessages);
+            let action = response.result.action;
+            let contexts = response.result.contexts;
+            console.log("Contexts are: ", contexts);
+            let parameters = response.result.parameters;
             if (this.isDefined(response.result) && this.isDefined(response.result.fulfillment)) {
-                let responseText = response.result.fulfillment.speech;
-                let responseData = response.result.fulfillment.data;
-                let responseMessages = response.result.fulfillment.messages;
 
-                if (this.isDefined(responseData) && this.isDefined(responseData.facebook)) {
+                if (this.isDefined(responseData) && this.isDefined(responseData.facebook) && !(this.isDefined(action))) {
                     let facebookResponseData = responseData.facebook;
                     this.doDataResponse(sender, facebookResponseData);
-                } else if (this.isDefined(responseMessages) && responseMessages.length > 0) {
+                } else if (this.isDefined(responseMessages) && responseMessages.length > 0 && !(this.isDefined(action))) {
                     this.doRichContentResponse(sender, responseMessages);
-                }
-                else if (this.isDefined(responseText)) {
+                } else if (this.isDefined(responseText) && !(this.isDefined(action))) {
                     this.doTextResponse(sender, responseText);
+                } else if (this.isDefined(action)) {
+                    console.log("===========Entering action===========");
+                    this.handleApiAiAction(sender, action, responseMessages, contexts, parameters);
                 }
 
             }
-        });
 
+        });
         apiaiRequest.on('error', (error) => console.error(error));
         apiaiRequest.end();
     }
@@ -349,7 +397,8 @@ class FacebookBot {
     }
 
     chunkString(s, len) {
-        let curr = len, prev = 0;
+        let curr = len,
+            prev = 0;
 
         let output = [];
 
@@ -358,8 +407,7 @@ class FacebookBot {
                 output.push(s.substring(prev, curr));
                 prev = curr;
                 curr += len;
-            }
-            else {
+            } else {
                 let currReverse = curr;
                 do {
                     if (s.substring(currReverse - 1, currReverse) == ' ') {
@@ -380,10 +428,14 @@ class FacebookBot {
         return new Promise((resolve, reject) => {
             request({
                 url: 'https://graph.facebook.com/v2.6/me/messages',
-                qs: {access_token: FB_PAGE_ACCESS_TOKEN},
+                qs: {
+                    access_token: FB_PAGE_ACCESS_TOKEN
+                },
                 method: 'POST',
                 json: {
-                    recipient: {id: sender},
+                    recipient: {
+                        id: sender
+                    },
                     message: messageData
                 }
             }, (error, response) => {
@@ -404,10 +456,14 @@ class FacebookBot {
         return new Promise((resolve, reject) => {
             request({
                 url: 'https://graph.facebook.com/v2.6/me/messages',
-                qs: {access_token: FB_PAGE_ACCESS_TOKEN},
+                qs: {
+                    access_token: FB_PAGE_ACCESS_TOKEN
+                },
                 method: 'POST',
                 json: {
-                    recipient: {id: sender},
+                    recipient: {
+                        id: sender
+                    },
                     sender_action: action
                 }
             }, (error, response) => {
@@ -445,11 +501,9 @@ class FacebookBot {
                 json: {
                     setting_type: "call_to_actions",
                     thread_state: "new_thread",
-                    call_to_actions: [
-                        {
-                            payload: FACEBOOK_WELCOME
-                        }
-                    ]
+                    call_to_actions: [{
+                        payload: FACEBOOK_WELCOME
+                    }]
                 }
             },
             (error, response, body) => {
@@ -486,7 +540,9 @@ let facebookBot = new FacebookBot();
 
 const app = express();
 
-app.use(bodyParser.text({type: 'application/json'}));
+app.use(bodyParser.text({
+    type: 'application/json'
+}));
 
 app.get('/webhook/', (req, res) => {
     if (req.query['hub.verify_token'] === FB_VERIFY_TOKEN) {
